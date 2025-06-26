@@ -5,7 +5,7 @@ data "aws_vpc" "default" {
 resource "aws_security_group" "tf_nsg" {
   name        = "allow_tls"
   description = "Allow TLS inbound traffic and all outbound traffic"
-  vpc_id      = data.aws_vpc.default.id 
+  vpc_id      = data.aws_vpc.default.id
 
   tags = {
     Name = "allow_tls"

@@ -1,5 +1,5 @@
 resource "aws_iam_policy" "cd-pipeline-policy" {
-  name        = "cdp"
+  name        = "cdpv2"
   description = "Policy for CodePipeline to have full access to EC2, S3, CodeDeploy, and CodeStar"
   path        = "/"
 

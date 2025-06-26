@@ -69,8 +69,8 @@ resource "aws_iam_role_policy" "allow_codestar_connection" {
     Version = "2012-10-17",
     Statement = [
       {
-        Effect   = "Allow",
-        Action   = [
+        Effect = "Allow",
+        Action = [
           "codestar-connections:UseConnection"
         ],
         Resource = "${aws_codestarconnections_connection.codestar.arn}"
@@ -117,7 +117,7 @@ resource "aws_iam_role_policy_attachment" "codepipeline-tf-attach" {
 
 
 
-resource "aws_iam_instance_profile" "ec2_tf_profile" {
-  name = "ec2_profile"
+resource "aws_iam_instance_profile" "ec2_tf-cd-profile" {
+  name = "ec2_tf-cd-profile"
   role = aws_iam_role.trust-ec2.name
 }

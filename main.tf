@@ -1,9 +1,10 @@
+
 data "aws_ami" "ubuntu" {
   most_recent = true
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-20250610*"]
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20250516*"]
   }
 
   filter {
@@ -15,51 +16,55 @@ data "aws_ami" "ubuntu" {
 }
 
 resource "aws_key_pair" "deployer" {
-  key_name   = "tf-key"
-  public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAYHjPdOzoVU/OjivX6Srlm1UShQSfGPLWSG0rvglUWV azuread\\abhijithdhanan@DESKTOP-C9A46FA"
+  key_name   = "tfkey"
+  public_key = file("tfkey.pub")
 }
 
 resource "aws_instance" "tf-web" {
-  ami                  = data.aws_ami.ubuntu.id
-  instance_type        = "t3a.micro"
-  key_name             = aws_key_pair.deployer.key_name
-  availability_zone    = "us-east-1a"
-  iam_instance_profile = aws_iam_instance_profile.ec2_tf_profile.name
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t3a.micro"
+  key_name               = aws_key_pair.deployer.key_name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_tf-cd-profile.name
   vpc_security_group_ids = [aws_security_group.tf_nsg.id]
+  availability_zone      = "us-east-1a"
+
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo apt update
+              sudo apt upgrade -y
+              sudo apt install apache2 -y
+              cd /
+              cd /var/www/html
+              rm -rf index.html
+              sudo apt install wget -y
+              sudo systemctl start apache2
+              sudo systemctl enable apache2
+              sudo apt install ruby -y
+              wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install
+              chmod +x install
+              sudo ./install auto
+              sudo systemctl start codedeploy-agent
+              sudo systemctl enable codedeploy-agent
+              EOF
 
 
-
-  provisioner "file" {
-    source      = "user_data.sh"
-    destination = "/tmp/user_data.sh"
-  }
-
-connection {
-    type     = "ssh"
-    user     = "ubuntu"
-    private_key = file("tfkey")
-    host     = self.public_ip
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "chmod +x /tmp/user_data.sh",
-      "sudo /tmp/user_data.sh"
-      
-    ]
-  }
-  
- 
   tags = {
     Name = "tf_instance"
-  
+  }
 }
+
+resource "aws_s3_bucket" "tf-codepipeline_bucket" {
+  bucket        = "tf-cd-pipeline-s3-1912-abhi-hoovai-linux"
+  force_destroy = true
+
+  tags = {
+    Name = "tf-cd-pipeline"
+  }
 }
 
 resource "aws_codedeploy_app" "cdapp" {
-  compute_platform = "Server"
   name             = "tfcdapp"
-
+  compute_platform = "Server"
 }
 
 resource "aws_codedeploy_deployment_group" "cdgroup" {
@@ -76,30 +81,21 @@ resource "aws_codedeploy_deployment_group" "cdgroup" {
   }
 }
 
-resource "aws_s3_bucket" "codepipeline_bucket" {
-  bucket        = "tf-cd-pipeline-s3-1912"
-  force_destroy = true
-
-  tags = {
-    Name = "tf-cd-pipeline"
-  }
-}
-
 resource "aws_codestarconnections_connection" "codestar" {
-  name          = "tf-codestar"
+  name          = "tf-codestar-hoovai"
   provider_type = "GitHub"
-  }
+}
 
 resource "aws_codepipeline" "cdpipeline" {
   name     = "tf-cd-pipeline"
   role_arn = aws_iam_role.trust-pipeline.arn
 
-    artifact_store {
-    location = aws_s3_bucket.codepipeline_bucket.bucket
+  artifact_store {
+    location = aws_s3_bucket.tf-codepipeline_bucket.bucket
     type     = "S3"
   }
 
-stage {
+  stage {
     name = "Source"
 
     action {
@@ -116,22 +112,23 @@ stage {
         BranchName       = "main"
       }
     }
-}
+  }
+
   stage {
     name = "Deploy"
 
     action {
-      name            = "Deploy_to_ec2"
+      name            = "Deploy_to_EC2"
       category        = "Deploy"
       owner           = "AWS"
       provider        = "CodeDeploy"
       input_artifacts = ["source_output"]
       version         = "1"
-    
-  configuration = {
-  ApplicationName     = aws_codedeploy_app.cdapp.name
-  DeploymentGroupName = aws_codedeploy_deployment_group.cdgroup.deployment_group_name
-  }
+
+      configuration = {
+        ApplicationName     = aws_codedeploy_app.cdapp.name
+        DeploymentGroupName = aws_codedeploy_deployment_group.cdgroup.deployment_group_name
+      }
     }
   }
 }
